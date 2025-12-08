@@ -56,7 +56,7 @@ export default function BlogPage() {
       <div className="mx-auto max-w-4xl rounded-2xl bg-white p-8 shadow-lg">
         {/* Back Button */}
         <button
-          onClick={() => router.push("/")}
+          onClick={() => router.push("/list")}
           className="mb-6 flex items-center text-emerald-800 hover:text-emerald-600"
         >
           <svg
@@ -109,10 +109,10 @@ export default function BlogPage() {
 
           {blog.content && (
             <div className="prose prose-lg max-w-none">
-              <p
+              <div
                 className="whitespace-pre-wrap text-gray-800"
                 dangerouslySetInnerHTML={{ __html: blog.content }}
-              ></p>
+              ></div>
             </div>
           )}
 
