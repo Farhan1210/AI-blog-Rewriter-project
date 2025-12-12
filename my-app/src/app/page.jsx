@@ -1,8 +1,16 @@
 "use client";
 import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
 export default function Home() {
   const router = useRouter();
+
+  // Clear blog list sessionStorage when landing on home page
+  useEffect(() => {
+    sessionStorage.removeItem("blogListPage");
+    sessionStorage.removeItem("blogListScroll");
+  }, []);
+
   return (
     <div className="relative h-screen w-full bg-gray-100">
       <div className="absolute top-1/2 left-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-5">

@@ -1,3 +1,4 @@
+// blog/[id]/page.jsx
 "use client";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -27,6 +28,25 @@ export default function BlogPage() {
     }
   }, [id]);
 
+  const handleBack = () => {
+    // 1. Retrieve saved values from sessionStorage
+    const savedPage = sessionStorage.getItem("blogListPage") || "1";
+    const savedSearch = sessionStorage.getItem("blogListSearch") || "";
+    const savedSort = sessionStorage.getItem("blogListSort") || "-1"; // Retrieve sort
+
+    // 2. Build the URLSearchParams object
+    const params = new URLSearchParams();
+    params.set("page", savedPage);
+    params.set("sort", savedSort); // Add sort to params
+
+    if (savedSearch) {
+      params.set("search", savedSearch);
+    }
+
+    // 3. Navigate back to the list using the full query string
+    router.push(`/list?${params.toString()}`);
+  };
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-gray-100">
@@ -41,7 +61,7 @@ export default function BlogPage() {
         <div className="text-center">
           <p className="text-xl text-gray-600">Blog not found</p>
           <button
-            onClick={() => router.push("/")}
+            onClick={handleBack}
             className="mt-4 rounded-lg bg-emerald-800 px-6 py-2 text-white hover:bg-emerald-700"
           >
             Back to Blogs
@@ -56,8 +76,8 @@ export default function BlogPage() {
       <div className="mx-auto max-w-4xl rounded-2xl bg-white p-8 shadow-lg">
         {/* Back Button */}
         <button
-          onClick={() => router.push("/list")}
-          className="mb-6 flex items-center text-emerald-800 hover:text-emerald-600"
+          onClick={handleBack}
+          className="mb-6 flex cursor-pointer items-center text-emerald-800 hover:text-emerald-600"
         >
           <svg
             className="mr-2 h-5 w-5"

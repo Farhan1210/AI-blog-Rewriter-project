@@ -1,6 +1,12 @@
 import axios from "axios";
 import * as cheerio from "cheerio";
 import { parseStringPromise } from "xml2js";
+import puppeteer from "puppeteer-extra";
+import StealthPlugin from "puppeteer-extra-plugin-stealth";
+
+// Register the stealth plugin
+puppeteer.use(StealthPlugin());
+const PUBLIC_BLOG_URL = "https://medium.com/tag/programming";
 
 class BlogScraperService {
   // Check if URL is already a direct blog post (not a homepage/listing page)
@@ -37,6 +43,32 @@ class BlogScraperService {
         if (isLongId) {
           console.log(
             `   ✅ Found ID-like segment: "${segment}" - treating as direct post`,
+          );
+          return true;
+        }
+      }
+
+      // [NEW RULE] Check for "Slug" patterns (single segment with many hyphens)
+      // Sites like People.com use /article-title-here-123
+      if (segments.length === 1) {
+        const segment = segments[0];
+        const hyphenCount = (segment.match(/-/g) || []).length;
+
+        // If the path is just one segment but has 3+ hyphens, it's likely an article
+        // e.g., /human-interest-news (2 hyphens) -> False (Homepage/Category)
+        // e.g., /taylor-swift-travis-kelce-date-night (4 hyphens) -> True (Article)
+        if (hyphenCount >= 3) {
+          console.log(
+            `   ✅ Segment has high hyphen count (${hyphenCount}) - treating as direct post`,
+          );
+          return true;
+        }
+
+        // Check for numeric ID at the end of the slug
+        // e.g. /some-news-story-8475638
+        if (/\d{6,}$/.test(segment)) {
+          console.log(
+            `   ✅ Segment ends in long numeric ID - treating as direct post`,
           );
           return true;
         }
@@ -275,15 +307,15 @@ class BlogScraperService {
       }
       console.log(`❌ RSS failed: No URLs found`);
 
-      // Try Sitemap
-      console.log(`🗺️ Trying sitemap...`);
-      blogUrls = await this.trySitemap(siteUrl);
-      if (blogUrls.length > 0) {
-        console.log(`✅ Sitemap successful: Found ${blogUrls.length} URLs`);
-        this.lastSuccessfulMethod = "sitemap";
-        return this.getTop10Unique(blogUrls);
-      }
-      console.log(`❌ Sitemap failed: No URLs found`);
+      // // Try Sitemap
+      // console.log(`🗺️ Trying sitemap...`);
+      // blogUrls = await this.trySitemap(siteUrl);
+      // if (blogUrls.length > 0) {
+      //   console.log(`✅ Sitemap successful: Found ${blogUrls.length} URLs`);
+      //   this.lastSuccessfulMethod = "sitemap";
+      //   return this.getTop10Unique(blogUrls);
+      // }
+      // console.log(`❌ Sitemap failed: No URLs found`);
 
       // Try Web Scraping
       console.log(`🕷️ Trying web scraping...`);
@@ -357,160 +389,321 @@ class BlogScraperService {
     return [];
   }
 
-  async trySitemap(siteUrl) {
-    const sitemapPaths = [
-      "/sitemap.xml",
-      "/sitemap_index.xml",
-      "/blog-sitemap.xml",
-      "/post-sitemap.xml",
-    ];
+  // async trySitemap(siteUrl) {
+  //   const sitemapPaths = [
+  //     "/sitemap.xml",
+  //     "/sitemap_index.xml",
+  //     "/blog-sitemap.xml",
+  //     "/post-sitemap.xml",
+  //   ];
 
-    for (const path of sitemapPaths) {
-      try {
-        const sitemapUrl = new URL(path, siteUrl).href;
-        const response = await axios.get(sitemapUrl, {
-          timeout: 8000,
-          headers: {
-            "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-          },
-        });
+  //   for (const path of sitemapPaths) {
+  //     try {
+  //       const sitemapUrl = new URL(path, siteUrl).href;
+  //       const response = await axios.get(sitemapUrl, {
+  //         timeout: 8000,
+  //         headers: {
+  //           "User-Agent":
+  //             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+  //         },
+  //       });
 
-        const result = await parseStringPromise(response.data);
+  //       const result = await parseStringPromise(response.data);
 
-        if (result.urlset && result.urlset.url) {
-          const urls = this.parseSitemapUrls(result.urlset.url, siteUrl);
-          if (urls.length > 0) return urls;
-        }
+  //       if (result.urlset && result.urlset.url) {
+  //         const urls = this.parseSitemapUrls(result.urlset.url, siteUrl);
+  //         if (urls.length > 0) return urls;
+  //       }
 
-        // Handle sitemap index (contains links to other sitemaps)
-        if (result.sitemapindex && result.sitemapindex.sitemap) {
-          const urls = await this.parseSitemapIndex(
-            result.sitemapindex.sitemap,
-          );
-          if (urls.length > 0) return urls;
-        }
-      } catch (error) {
-        continue;
-      }
-    }
+  //       // Handle sitemap index (contains links to other sitemaps)
+  //       if (result.sitemapindex && result.sitemapindex.sitemap) {
+  //         const urls = await this.parseSitemapIndex(
+  //           result.sitemapindex.sitemap,
+  //         );
+  //         if (urls.length > 0) return urls;
+  //       }
+  //     } catch (error) {
+  //       continue;
+  //     }
+  //   }
 
-    return [];
-  }
+  //   return [];
+  // }
 
-  async parseSitemapIndex(sitemaps) {
-    // Try to fetch the first blog-related sitemap
-    for (const sitemap of sitemaps.slice(0, 3)) {
-      try {
-        const url = sitemap.loc[0];
-        if (url.includes("blog") || url.includes("post")) {
-          const response = await axios.get(url, { timeout: 8000 });
-          const result = await parseStringPromise(response.data);
-          if (result.urlset && result.urlset.url) {
-            return this.parseSitemapUrls(result.urlset.url, url);
-          }
-        }
-      } catch (error) {
-        continue;
-      }
-    }
-    return [];
-  }
+  // async parseSitemapIndex(sitemaps) {
+  //   // Try to fetch the first blog-related sitemap
+  //   for (const sitemap of sitemaps.slice(0, 3)) {
+  //     try {
+  //       const url = sitemap.loc[0];
+  //       if (url.includes("blog") || url.includes("post")) {
+  //         const response = await axios.get(url, { timeout: 8000 });
+  //         const result = await parseStringPromise(response.data);
+  //         if (result.urlset && result.urlset.url) {
+  //           return this.parseSitemapUrls(result.urlset.url, url);
+  //         }
+  //       }
+  //     } catch (error) {
+  //       continue;
+  //     }
+  //   }
+  //   return [];
+  // }
 
+  // MAIN ENTRY POINT FOR SCRAPING
   async scrapeWebsite(siteUrl) {
+    const MIN_LINKS_THRESHOLD = 3;
+
+    // STEP 1: URL Check - Use a public tag if the root Medium URL is provided
+    let scrapeUrl = siteUrl;
+    if (siteUrl === "https://medium.com/" || siteUrl === "https://medium.com") {
+      console.log(
+        `💡 Detected protected Medium root. Changing target to public tag page: ${PUBLIC_BLOG_URL}`,
+      );
+      scrapeUrl = PUBLIC_BLOG_URL;
+    }
+
+    // STRATEGY 2: Try RSS/Sitemap (always run the fast stuff first on the *original* URL)
+    // You already do this, so we skip the explicit code here.
+
+    // STRATEGY 3: Cheerio (Fast but fails for CSR/403)
+    console.log(`🕷️ Attempting fast scrape (Cheerio) for ${scrapeUrl}...`);
+    // NOTE: We still call scrapeWithCheerio on the public URL
+    let cheerioUrls = await this.scrapeWithCheerio(scrapeUrl);
+
+    if (cheerioUrls.length >= MIN_LINKS_THRESHOLD) {
+      console.log(
+        `✅ Cheerio successful: Found ${cheerioUrls.length} URLs (passed threshold)`,
+      );
+      return cheerioUrls;
+    }
+
+    // STRATEGY 4: Fallback to Puppeteer (on the public URL)
+    console.log(
+      `⚠️ Suspicious Cheerio result: Found only ${cheerioUrls.length} links. Switching to Puppeteer...`,
+    );
+
+    // Pass the potentially swapped URL to Puppeteer
+    const puppeteerUrls = await this.scrapeWithPuppeteer(scrapeUrl);
+
+    // DECISION LOGIC:
+    if (puppeteerUrls.length > cheerioUrls.length) {
+      console.log(
+        `✅ Puppeteer result better: Found ${puppeteerUrls.length} URLs (vs Cheerio's ${cheerioUrls.length})`,
+      );
+      return puppeteerUrls;
+    } else if (cheerioUrls.length > 0) {
+      console.log(
+        `⚠️ Puppeteer didn't find more links. Reverting to Cheerio result (${cheerioUrls.length} links).`,
+      );
+      return cheerioUrls;
+    } else {
+      console.log(`❌ Both methods failed to find URLs.`);
+      return [];
+    }
+  }
+
+  // YOUR ORIGINAL LOGIC (Refactored into its own method)
+  async scrapeWithCheerio(siteUrl) {
     try {
       const response = await axios.get(siteUrl, {
-        timeout: 10000,
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-          Accept:
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "en-US,en;q=0.5",
-        },
+        /* ... headers ... */
       });
-
       const $ = cheerio.load(response.data);
       const blogUrls = [];
       const baseUrl = new URL(siteUrl).origin;
       const seenUrls = new Set();
 
-      // Debug: Log total links found
-      const totalLinks = $("a").length;
-      console.log(
-        `[DEBUG] ${siteUrl}: Found ${totalLinks} total links on page`,
-      );
+      const normalizedCurrent = siteUrl.replace(/\/$/, "").toLowerCase();
+      seenUrls.add(normalizedCurrent);
+      seenUrls.add(normalizedCurrent + "/");
 
-      // Enhanced selectors for different blog structures
-      const selectors = [
-        "article a",
-        ".blog a",
-        ".post a",
-        '[class*="blog"] a',
-        '[class*="post"] a',
-        '[class*="story"] a',
-        '[class*="article"] a',
-        'a[href*="/blog/"]',
-        'a[href*="/post/"]',
-        'a[href*="/article/"]',
-        'a[href*="/news/"]',
-        'a[href*="/story/"]',
-        'a[href*="/stories/"]',
-        "main a", // Main content area
-        '[role="main"] a', // Semantic main
-        ".content a", // Common content class
-        "#content a", // Common content ID
-      ];
+      // --- MODIFIED SELECTOR HERE ---
+      // Select all <a> tags that are NOT descendants of <header>, <footer>, or <nav>
+      const linkSelector = "a:not(header a):not(footer a):not(nav a)";
 
-      selectors.forEach((selector) => {
-        $(selector).each((i, elem) => {
-          const href = $(elem).attr("href");
-          if (!href) return;
+      // This is a more generalized way to prevent static links from being scraped
+      $(linkSelector).each((i, elem) => {
+        const href = $(elem).attr("href");
+        if (!href) return;
 
-          try {
-            const fullUrl = href.startsWith("http")
-              ? href
-              : new URL(href, baseUrl).href;
+        try {
+          // ... (rest of your existing link processing/filtering logic) ...
+          const fullUrl = href.startsWith("http")
+            ? href
+            : new URL(href, baseUrl).href;
+          const normalizedUrl = fullUrl.replace(/\/$/, "").toLowerCase();
 
-            // Avoid duplicates and non-blog URLs
-            if (!seenUrls.has(fullUrl) && this.isBlogUrl(fullUrl, siteUrl)) {
-              seenUrls.add(fullUrl);
-              blogUrls.push(fullUrl);
-            }
-          } catch (e) {
-            // Invalid URL, skip
+          if (
+            !seenUrls.has(normalizedUrl) &&
+            this.isBlogUrl(fullUrl, siteUrl)
+          ) {
+            seenUrls.add(normalizedUrl);
+            blogUrls.push(fullUrl);
           }
-        });
+        } catch (e) {
+          // invalid url
+        }
       });
-
-      // If still no results, try a more aggressive approach
-      if (blogUrls.length === 0) {
-        $("a").each((i, elem) => {
-          const href = $(elem).attr("href");
-          if (!href) return;
-
-          try {
-            const fullUrl = href.startsWith("http")
-              ? href
-              : new URL(href, baseUrl).href;
-
-            if (!seenUrls.has(fullUrl) && this.isBlogUrl(fullUrl, siteUrl)) {
-              seenUrls.add(fullUrl);
-              blogUrls.push(fullUrl);
-            }
-          } catch (e) {
-            // Invalid URL, skip
-          }
-        });
-      }
-
+      // ...
       return blogUrls;
     } catch (error) {
-      console.error("Scraping error:", error.message);
+      console.warn(`Cheerio scrape warning: ${error.message}`);
       return [];
     }
   }
 
+  async scrapeWithPuppeteer(siteUrl) {
+    let browser = null;
+    try {
+      console.log(`🕷️ Launching Puppeteer (Deep Stealth) for ${siteUrl}...`);
+
+      browser = await puppeteer.launch({
+        headless: false,
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--window-size=1920,1080",
+        ],
+      });
+
+      const page = await browser.newPage();
+
+      // 1. Set Viewport to Desktop (Crucial for Medium)
+      await page.setViewport({ width: 1920, height: 1080 });
+
+      // 2. Navigate
+      console.log("   ...navigating to page");
+      await page.goto(siteUrl, { waitUntil: "networkidle2", timeout: 60000 });
+
+      // 3. WAIT STRATEGY: Wait for specific Medium elements
+      // Medium article titles usually use h2 or h3 classes, or 'article' tags
+      try {
+        console.log("   ...waiting for content to load");
+        await page.waitForSelector("article, h2", { timeout: 10000 });
+      } catch (e) {
+        console.log(
+          "   ⚠️ Timeout waiting for selectors. Page might be blocked or empty.",
+        );
+      }
+
+      // 4. Scroll to trigger lazy loading
+      console.log("   ...scrolling");
+      await this.autoScroll(page);
+
+      // 5. Extract ALL links with SCOPE FILTER
+      const hrefs = await page.evaluate(() => {
+        // --- MODIFIED SELECTOR HERE ---
+        // Same logic: Select all <a> tags that are NOT in common static regions
+        const selector = "a:not(header a):not(footer a):not(nav a)";
+
+        return Array.from(document.querySelectorAll(selector))
+          .map((a) => a.href)
+          .filter((href) => href);
+      });
+
+      console.log(`   📊 RAW: Puppeteer found ${hrefs.length} total links.`);
+
+      // DEBUG: Print the first 5 links found to see what we are looking at
+      if (hrefs.length > 0) {
+        console.log(`   🔎 Sample links found:`, hrefs.slice(0, 3));
+      }
+
+      // Filter URLs
+      const blogUrls = [];
+      const seenUrls = new Set();
+      const normalizedCurrent = siteUrl.replace(/\/$/, "").toLowerCase();
+
+      seenUrls.add(normalizedCurrent);
+      seenUrls.add(normalizedCurrent + "/");
+
+      for (const fullUrl of hrefs) {
+        try {
+          // 1. Strip the query parameters (everything after the '?')
+          const cleanUrl = fullUrl.split("?")[0];
+
+          // 2. Apply the Medium specific heuristic
+          if (
+            siteUrl.includes("medium.com") &&
+            this.isMediumArticle(cleanUrl)
+          ) {
+            if (!seenUrls.has(cleanUrl)) {
+              seenUrls.add(cleanUrl);
+              blogUrls.push(cleanUrl); // Push the clean URL
+            }
+            continue;
+          }
+
+          // 3. Standard Logic for other sites
+          const normalizedUrl = cleanUrl.replace(/\/$/, "").toLowerCase();
+          if (
+            !seenUrls.has(normalizedUrl) &&
+            this.isBlogUrl(cleanUrl, siteUrl)
+          ) {
+            seenUrls.add(normalizedUrl);
+            blogUrls.push(cleanUrl); // Push the clean URL
+          }
+        } catch (e) {}
+      }
+
+      return blogUrls;
+    } catch (error) {
+      console.error("Puppeteer fatal error:", error.message);
+      return [];
+    } finally {
+      if (browser) await browser.close();
+    }
+  }
+
+  // SPECIAL HELPER FOR MEDIUM URLS
+  isMediumArticle(url) {
+    // Medium articles usually have a hash ID at the end (e.g., -a1b2c3d4e5)
+    // OR they are under a collection
+    if (!url.includes("medium.com")) return false;
+
+    // Reject common non-article paths
+    if (
+      url.includes("/tag/") ||
+      url.includes("/m/") ||
+      url.includes("/about") ||
+      url.includes("/plans")
+    )
+      return false;
+
+    // Accept links with 8+ hex characters at the end (standard Medium ID)
+    if (/-[a-f0-9]{8,12}$/.test(url)) return true;
+
+    return false;
+  }
+
+  // UPDATED AUTO-SCROLL (Slower and more persistent)
+  async autoScroll(page) {
+    await page.evaluate(async () => {
+      await new Promise((resolve) => {
+        let totalHeight = 0;
+        const distance = 200; // Scroll chunk
+        let retries = 0;
+
+        const timer = setInterval(() => {
+          const scrollHeight = document.body.scrollHeight;
+          window.scrollBy(0, distance);
+          totalHeight += distance;
+
+          // If we hit the bottom, wait a bit to see if more loads (Infinite Scroll)
+          if (totalHeight >= scrollHeight) {
+            retries++;
+            // If we've hit bottom 3 times with no new content, stop.
+            if (retries > 3 || totalHeight > 5000) {
+              clearInterval(timer);
+              resolve();
+            }
+          } else {
+            retries = 0; // Reset retries if we are still moving
+          }
+        }, 200); // Slower interval (200ms) to simulate reading
+      });
+    });
+  }
   // Parse RSS items - extract only URLs
   parseRssItems(items) {
     return items
@@ -539,40 +732,65 @@ class BlogScraperService {
 
   isBlogUrl(url, siteUrl) {
     try {
-      const blogPatterns = [
-        /\/blog\//i,
-        /\/article\//i,
-        /\/post\//i,
-        /\/news\//i,
-        /\/story\//i, // Added for news stories
-        /\/stories\//i, // Added for stories
-        /\/\d{4}\/\d{2}\//, // Date pattern like /2024/01/
-        /\/\d{4}\/\d{2}\/\d{2}\//, // Full date pattern
-        /\/mediaaction\/blog\//i, // BBC Media Action specific
-        /\/blogs\//i, // Plural blogs
-      ];
-
+      const urlObj = new URL(url);
+      const path = urlObj.pathname;
       const baseDomain = new URL(siteUrl).hostname.replace("www.", "");
-      const urlDomain = new URL(url).hostname.replace("www.", "");
+      const urlDomain = urlObj.hostname.replace("www.", "");
 
-      // Must be same domain
+      // 1. Must be same domain
       if (baseDomain !== urlDomain) {
         return false;
       }
 
-      // Exclude common non-blog pages
+      // 2. Exclude common non-blog pages (expanded list)
       const excludePatterns = [
-        /\/(tag|category|author|page)\/[^\/]*$/i, // Archive pages (but allow if followed by more path)
-        /\.(jpg|jpeg|png|gif|pdf|zip|css|js)$/i, // Media files
-        /\/(wp-content|wp-admin|feed|search)\//i, // WordPress/system paths
-        /\/(contact|about|privacy|terms)$/i, // Static pages
+        /\/(tag|category|author|page|topics|search|login|register|shop|store)\//i,
+        /\.(jpg|jpeg|png|gif|pdf|zip|css|js|json|xml)$/i,
+        /\/(wp-content|wp-admin|feed|rss|contact|about|privacy|terms|accessibility|advertise)\/?$/i,
+        /^\/?$/, // Root homepage
       ];
 
-      if (excludePatterns.some((pattern) => pattern.test(url))) {
+      if (excludePatterns.some((pattern) => pattern.test(path))) {
         return false;
       }
 
-      return blogPatterns.some((pattern) => pattern.test(url));
+      // 3. Strict Blog Patterns (Keep your existing keywords)
+      const strictBlogPatterns = [
+        /\/blog\//i,
+        /\/article\//i,
+        /\/post\//i,
+        /\/news\//i,
+        /\/story\//i,
+        /\/stories\//i,
+        /\/\d{4}\/\d{2}\//, // Date pattern
+      ];
+
+      if (strictBlogPatterns.some((pattern) => pattern.test(path))) {
+        return true;
+      }
+
+      // 4. NEW: Heuristic for "Slug" URLs (e.g., /this-is-a-long-article-title)
+      // Checks for paths with at least 3 hyphens (highly likely to be an article title)
+      // and ensures it's not just a category string.
+      const segments = path.split("/").filter((s) => s.length > 0);
+      const lastSegment = segments[segments.length - 1];
+
+      if (lastSegment) {
+        // Count hyphens in the last segment (slug)
+        const hyphenCount = (lastSegment.match(/-/g) || []).length;
+
+        // If it has 3+ hyphens, it's almost certainly an article title
+        if (hyphenCount >= 3) {
+          return true;
+        }
+
+        // Check for long numeric ID at end (People.com often uses this: ...-8755670)
+        if (/\d{6,}$/.test(lastSegment)) {
+          return true;
+        }
+      }
+
+      return false;
     } catch {
       return false;
     }

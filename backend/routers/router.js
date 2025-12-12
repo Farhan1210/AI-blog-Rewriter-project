@@ -1,6 +1,5 @@
 import express from "express";
 import { eachBlog, fetchBlogs, getBlogs } from "../controller/controller.js";
-import { get } from "mongoose";
 
 const router = express.Router();
 
